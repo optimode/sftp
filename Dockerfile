@@ -1,7 +1,7 @@
 # ---------------------------------------------------------------------------
 # Optimode SFTP -- OpenSSH-based SFTP server with per-user chroot isolation
 # ---------------------------------------------------------------------------
-FROM alpine:3.20
+FROM alpine:3.24
 
 ARG SFTP_VERSION=dev
 ARG GIT_REVISION=
