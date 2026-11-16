@@ -1,0 +1,18 @@
+# Multiuser configuration for the SFTP server.
+#
+# This file is read from /etc/sftp/users.conf inside the container.
+#
+# Format (whitespace separated):
+#     <name> [uid] [gid] [home]
+#
+# If uid/gid are omitted, the defaults (SFTP_UID / SFTP_GID) are used.
+# If home is omitted, it defaults to <SFTP_CHROOT_BASE>/<name>/data
+# (e.g. /sftp/alice/data).
+#
+# Optional per-user files (same directory):
+#     authorized_keys/<name>   -> the user's public key(s)
+#     passwords/<name>         -> the user's password
+#
+# Example:
+# alice 1001 1001 /sftp/alice/data
+# bob   1002 1002

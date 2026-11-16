@@ -1,0 +1,54 @@
+# ===========================================================================
+#  docker-compose.dev.yml -- DEVELOPER setup (builds the image locally)
+#
+#  Usage:
+#      cp .env.dev.example .env
+#      docker compose -f docker-compose.dev.yml up -d --build
+#
+#  This variant builds the image from the local Dockerfile and configures a
+#  single primary user (SFTP_USER) plus optional extra users via ./etc-sftp.
+#  For production, use docker-compose.yml instead.
+# ===========================================================================
+services:
+  sftp:
+    build: .
+    image: optimode/sftp:dev
+    container_name: sftp-dev
+    restart: unless-stopped
+
+    # The container-internal port (SFTP_PORT) and the host port are independent.
+    ports:
+      - "${SFTP_HOST_PORT:-2222}:${SFTP_PORT:-22}"
+
+    environment:
+      # --- user / isolation ---
+      SFTP_USER: "${SFTP_USER:-sftpuser}"
+      SFTP_UID: "${SFTP_UID:-1000}"
+      SFTP_GID: "${SFTP_GID:-1000}"
+      SFTP_HOME: "${SFTP_HOME:-/sftp/sftpuser/data}"
+      SFTP_CHROOT_BASE: "${SFTP_CHROOT_BASE:-/sftp}"
+
+      # --- authentication (a key OR a password; both may be set) ---
+      SFTP_PASSWORD: "${SFTP_PASSWORD:-}"
+      SSH_PUBLIC_KEY: "${SSH_PUBLIC_KEY:-}"
+
+      # --- network / logging ---
+      SFTP_PORT: "${SFTP_PORT:-22}"
+      SFTP_LOG_LEVEL: "${SFTP_LOG_LEVEL:-INFO}"
+      # Timezone for log timestamps (tzdata is installed in the image)
+      TZ: "${TZ:-Europe/Budapest}"
+      # How many daily log files to keep (days); 0 = never delete
+      SFTP_LOG_RETENTION_DAYS: "${SFTP_LOG_RETENTION_DAYS:-14}"
+
+    volumes:
+      # Where uploaded data lives. Feel free to swap the left side for a volume.
+      - ./data:${SFTP_HOME:-/sftp/sftpuser/data}
+      # Persistent host keys (fingerprint stays stable across restarts)
+      - sftp-hostkeys:/etc/ssh
+      # Persistent, timestamped logs (daily files: sshd-YYYYMMDD.log)
+      - ./logs:/var/log/sftp
+      # Extra users configuration (optional)
+      - ./etc-sftp:/etc/sftp
+
+volumes:
+  sftp-hostkeys:

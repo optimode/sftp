@@ -1,0 +1,69 @@
+# ===========================================================================
+#  docker-compose.yml -- PRODUCTION setup (uses the published image)
+#
+#  Multiuser, config-file driven:
+#    * users and their uid/gid/home come from   ./etc-sftp/users.conf
+#    * per-user public keys come from           ./etc-sftp/authorized_keys/<name>
+#    * per-user passwords come from             ./etc-sftp/passwords/<name>
+#
+#  The built-in primary user is disabled on purpose (SFTP_USER: "") so that
+#  every account is declared in the config files.
+#
+#  Usage:
+#      cp .env.example .env          # then edit
+#      cp etc-sftp/users.conf.example etc-sftp/users.conf   # then edit
+#      docker compose up -d
+# ===========================================================================
+services:
+  sftp:
+    image: optimode/sftp:${SFTP_IMAGE_TAG:-latest}
+    container_name: sftp
+    restart: unless-stopped
+
+    # The container-internal port (SFTP_PORT) and the host port are independent.
+    ports:
+      - "${SFTP_HOST_PORT:-2222}:${SFTP_PORT:-22}"
+
+    environment:
+      # --- user / isolation (multiuser: users come from config files) ---
+      # Empty SFTP_USER disables the built-in primary user.
+      SFTP_USER: ""
+      SFTP_CHROOT_BASE: "${SFTP_CHROOT_BASE:-/sftp}"
+
+      # Default uid/gid for users.conf entries that omit them.
+      SFTP_UID: "${SFTP_UID:-1000}"
+      SFTP_GID: "${SFTP_GID:-1000}"
+
+      # --- network / logging ---
+      SFTP_PORT: "${SFTP_PORT:-22}"
+      SFTP_LISTEN: "${SFTP_LISTEN:-0.0.0.0}"
+      SFTP_LOG_LEVEL: "${SFTP_LOG_LEVEL:-INFO}"
+      # Timezone for log timestamps (tzdata is installed in the image)
+      TZ: "${TZ:-UTC}"
+      # How many daily log files to keep (days); 0 = never delete
+      SFTP_LOG_RETENTION_DAYS: "${SFTP_LOG_RETENTION_DAYS:-30}"
+
+    volumes:
+      # Chroot base directory: users live under /sftp/<name>/data.
+      # Swap for a bind mount (e.g. ./data:/sftp) if you want host access.
+      - sftp-data:/sftp
+      # Persistent host keys (fingerprint stays stable across restarts)
+      - sftp-hostkeys:/etc/ssh
+      # Persistent, timestamped logs (daily files: sshd-YYYYMMDD.log)
+      # Bind mount (e.g. ./logs:/var/log/sftp) if you want host access.
+      - sftp-logs:/var/log/sftp
+      # User configuration (users.conf, authorized_keys/, passwords/) -- read-only
+      - ./etc-sftp:/etc/sftp:ro
+
+    # Definition (the `test`) is inherited from the image; only the timing is
+    # tuned here, per environment.
+    healthcheck:
+      interval: "${SFTP_HC_INTERVAL:-30s}"
+      timeout: "${SFTP_HC_TIMEOUT:-5s}"
+      retries: ${SFTP_HC_RETRIES:-3}
+      start_period: "${SFTP_HC_START_PERIOD:-10s}"
+
+volumes:
+  sftp-data:
+  sftp-hostkeys:
+  sftp-logs:

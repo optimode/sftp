@@ -1,0 +1,17 @@
+# Build context exclusions
+Dockerfile
+docker-compose.yml
+docker-compose.dev.yml
+README.md
+CHANGELOG.md
+SECURITY.md
+LICENSE
+.env
+.env.example
+.env.dev.example
+data/
+logs/
+etc-sftp/
+.github/
+.git
+.gitignore

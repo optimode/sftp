@@ -1,0 +1,364 @@
+# Optimode SFTP
+
+[![Release](https://img.shields.io/github/v/release/optimode/sftp?sort=semver)](https://github.com/optimode/sftp/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Image: ghcr.io](https://img.shields.io/badge/image-ghcr.io%2Foptimode%2Fsftp-blue)](https://github.com/optimode/sftp/pkgs/container/sftp)
+[![Image: Docker Hub](https://img.shields.io/badge/image-optimode%2Fsftp-blue)](https://hub.docker.com/r/optimode/sftp)
+
+A minimal (Alpine-based) Docker image that runs **only** an OpenSSH
+`internal-sftp` subsystem. Every user is placed in their own **chroot**, cannot
+spawn a shell, and has no other access — giving you strong isolation.
+
+Configuration is driven entirely by **environment variables and config files**:
+home directory, UID, GID, SSH public key, password, port, and more.
+
+---
+
+## Features
+
+- **Per-user chroot isolation** (`ChrootDirectory` + `internal-sftp`).
+- **No shell / no forwarding** — enforced by `ForceCommand internal-sftp`,
+  `AllowTcpForwarding no`, `AllowAgentForwarding no`, `PermitTunnel no`.
+- **Flexible configuration**: `SFTP_USER`, `SFTP_UID`, `SFTP_GID`, `SFTP_HOME`.
+- **Key and/or password** authentication (`SSH_PUBLIC_KEY` / `SFTP_PASSWORD`).
+- **Multiuser** driven by config files (`users.conf` + key/password files).
+- **Persistent host keys** (stable fingerprint across restarts).
+- **Persistent, timestamped logging** (rsyslog): daily files with RFC3339
+  timestamps, automatic compression and retention; `docker logs` still works.
+- **Healthcheck** that verifies sshd is listening on the port.
+- The `sshd_config` is generated at startup and **validated** (`sshd -t`); the
+  container refuses to start on an invalid configuration.
+
+---
+
+## Images
+
+| Registry | Image |
+| --- | --- |
+| GHCR | `ghcr.io/optimode/sftp` |
+| Docker Hub | `optimode/sftp` |
+
+Tags follow SemVer: `1.0.0` (immutable, recommended), `1.0`, `1`, and `latest`.
+
+---
+
+## Quick start
+
+### Production (multiuser, published image)
+
+```bash
+# 1) Deployment settings
+cp .env.example .env
+#    edit at least: TZ, SFTP_HOST_PORT
+
+# 2) User configuration
+cp etc-sftp/users.conf.example etc-sftp/users.conf
+#    define users, e.g.:  alice 1001 1001 /sftp/alice/data
+mkdir -p etc-sftp/authorized_keys etc-sftp/passwords
+#    put public keys into  etc-sftp/authorized_keys/<name>
+#    and/or passwords into etc-sftp/passwords/<name>
+
+# 3) Start
+docker compose up -d
+```
+
+Connect (default host port `2222`):
+
+```bash
+sftp -P 2222 -i ~/.ssh/id_ed25519 alice@localhost
+# or interactively:
+sftp -P 2222 alice@localhost
+```
+
+> `-P` (capital P) is the port flag for `sftp`/`scp`. For `ssh` it is `-p`.
+
+### Development (local build, single primary user)
+
+```bash
+cp .env.dev.example .env
+docker compose -f docker-compose.dev.yml up -d --build
+```
+
+---
+
+## Environment variables
+
+### Runtime (both setups)
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `SFTP_USER` | `sftpuser` | Primary user name. **Set to empty (`""`) to disable** the built-in primary user (multiuser/config-file mode). |
+| `SFTP_UID` | `1000` | UID for the primary user / default UID for `users.conf` entries |
+| `SFTP_GID` | `1000` | GID for the primary user / default GID for `users.conf` entries |
+| `SFTP_HOME` | `/sftp/<user>/data` | Home directory the user logs into and can write to |
+| `SFTP_CHROOT_BASE` | `/sftp` | Base directory for chroots (extra users: `<base>/<user>/...`) |
+| `SSH_PUBLIC_KEY` | *(empty)* | A public key (`ssh-ed25519 AAAA...`) for the primary user |
+| `SSH_AUTHORIZED_KEYS_FILE` | *(empty)* | Path to a file with the primary user's key(s) |
+| `SFTP_PASSWORD` | *(empty)* | Password for the primary user (if empty with a key → password login disabled) |
+| `SFTP_PORT` | `22` | SSH port inside the container |
+| `SFTP_HOST_PORT` | `2222` | Host port (compose only) |
+| `SFTP_LISTEN` | `0.0.0.0` | Listening interface |
+| `SFTP_LOG_LEVEL` | `INFO` | `QUIET`/`ERROR`/`INFO`/`VERBOSE`/`DEBUG` |
+| `SFTP_LOG_DIR` | `/var/log/sftp` | Persistent log directory (inside the container) |
+| `SFTP_LOG_RETENTION_DAYS` | `14` | Daily log retention in days (`0` = never delete) |
+| `SFTP_UMASK` | `0022` | umask applied to files created via SFTP |
+| `TZ` | `Europe/Budapest` | Timezone for log timestamps (`tzdata` is installed) |
+
+### Compose-only (healthcheck tuning)
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `SFTP_IMAGE_TAG` | `latest` | Published image tag (production compose) |
+| `SFTP_HC_INTERVAL` | `30s` | Healthcheck interval |
+| `SFTP_HC_TIMEOUT` | `5s` | Healthcheck timeout |
+| `SFTP_HC_RETRIES` | `3` | Consecutive failures before `unhealthy` |
+| `SFTP_HC_START_PERIOD` | `10s` | Grace period at startup |
+
+### The chroot / home relationship
+
+The chroot root is **always the parent of `SFTP_HOME`** and must be root-owned
+and not writable, as OpenSSH requires (this cannot be disabled via `StrictModes`
+either — it is a hard sshd requirement). `SFTP_HOME` belongs to the user and is
+writable.
+
+```
+/sftp/sftpuser/         <- chroot root (root:root, 755)  -> user sees "/"
+/sftp/sftpuser/data/    <- SFTP_HOME      (uid:gid, writable) -> user sees "/data"
+```
+
+OpenSSH `internal-sftp` starts in the **chroot root**, so the user begins in
+`/` (read-only) and the writable area is the `/data` subdirectory. This is the
+safe, standard pattern: the chroot root can never be writable, otherwise sshd
+refuses the login.
+
+> **Note:** at startup the container sets `SFTP_HOME` to `SFTP_UID:SFTP_GID`
+> ownership. With a bind mount the host-side directory ownership changes
+> accordingly (an unknown UID shows up as `nobody`). If that is undesirable, use
+> a named volume or set `SFTP_UID` to your host user's UID.
+
+---
+
+## Multiuser
+
+Users are declared in `etc-sftp/users.conf`:
+
+```
+alice 1001 1001 /sftp/alice/data
+bob   1002 1002
+```
+
+- uid/gid are optional (default to `SFTP_UID`/`SFTP_GID`).
+- home is optional (defaults to `/sftp/<name>/data`).
+- Public keys: `etc-sftp/authorized_keys/<name>`
+- Passwords: `etc-sftp/passwords/<name>`
+
+The production `docker-compose.yml` already mounts `./etc-sftp` (read-only), so
+only a restart is needed after editing:
+
+```bash
+docker compose restart
+```
+
+---
+
+## Logging
+
+The container runs **rsyslog**, and sshd writes to syslog. Every entry goes to
+two places:
+
+1. **Persistent file** on the `sftp-logs` volume: `sshd-YYYYMMDD.log` (daily).
+2. **stdout** (`docker logs`), so the usual workflow keeps working.
+
+### Format
+
+RFC3339 timestamp **with year and timezone**, then host, program, PID and message:
+
+```
+2026-11-16T10:33:04.464605+01:00 <host> sshd[48]: Accepted publickey for alice from 172.17.0.1 port 47994 ssh2: ED25519 SHA256:...
+```
+
+The timezone comes from `TZ` (`tzdata` is installed), e.g. `TZ=Europe/Budapest`
+→ `+01:00`/`+02:00` depending on daylight saving.
+
+### Rotation and retention
+
+- **Rotation = daily rollover**: a new `sshd-YYYYMMDD.log` every day.
+- On startup, `rotate-logs.sh`:
+  - **gzip**-compresses previous days (`sshd-YYYYMMDD.log.gz`),
+  - **deletes** anything older than `SFTP_LOG_RETENTION_DAYS` (based on the date
+    in the filename, so compression/mtime churn cannot confuse it).
+- Today's file is written continuously by rsyslog.
+
+### Access
+
+```bash
+docker compose exec sftp tail -f /var/log/sftp/sshd-$(date +%Y%m%d).log
+docker logs -f sftp        # stdout mirror
+```
+
+### Notes
+
+- If rsyslog fails to start, the entrypoint **falls back** to `sshd -e` (stderr)
+  so logs are not lost entirely.
+- Files are created with mode `0644` so they are readable from the host.
+- For central logging, use a Docker logging driver (syslog/fluentd/journald) on
+  the `docker logs` side, or ship the log directory.
+
+---
+
+## Healthcheck
+
+The built-in healthcheck verifies that **sshd is listening on the port**
+(from `SFTP_PORT`, default 22):
+
+```dockerfile
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD p="${SFTP_PORT:-22}"; netstat -ltn 2>/dev/null | awk '{print $4}' | grep -q ":${p}$"
+```
+
+- Docker runs it **inside the container** periodically (like a `docker exec`),
+  with the container environment (so it sees `SFTP_PORT`).
+- States: `starting` (during start-period) → `healthy` / `unhealthy`.
+- Exit code: `0` = healthy, `1` = unhealthy.
+
+### Overriding / disabling
+
+| Mode | How |
+| --- | --- |
+| `docker run` partial | `--health-interval=10s --health-retries=5` (the rest is kept) |
+| `docker run` disable | `--no-healthcheck` |
+| `docker compose` partial | `healthcheck: { test: ["CMD","..."], interval: 10s }` |
+| `docker compose` disable | `healthcheck: { disable: true }` |
+| In the Dockerfile | `HEALTHCHECK NONE` |
+
+> Compose **merges healthcheck fields** with the image's values: if you only set
+> `test`, then `interval`/`timeout`/`retries`/`start_period` come from the image.
+
+> `unhealthy` does **not** restart the container (the `restart` policy does not
+> do that). Use an orchestrator (Swarm/K8s) or an `autoheal`-style tool.
+
+### Env-driven tuning (recommended pattern)
+
+Operationally, the **definition** (the `test`) belongs to the image, while the
+**policy** (timing, strictness) belongs to the deployment. So keep the `test` in
+the Dockerfile and tune only via environment variables in `docker-compose.yml`
+(the `test` is then inherited from the image — no duplication):
+
+```yaml
+services:
+  sftp:
+    # ...
+    healthcheck:
+      # the "test" is intentionally omitted -> inherited from the image
+      interval:     "${SFTP_HC_INTERVAL:-30s}"
+      timeout:      "${SFTP_HC_TIMEOUT:-5s}"
+      retries:      ${SFTP_HC_RETRIES:-3}
+      start_period: "${SFTP_HC_START_PERIOD:-10s}"
+```
+
+The production compose file already uses this pattern. Typical values:
+
+| Environment | `interval` | `retries` | `start_period` |
+| --- | --- | --- | --- |
+| Development (fast feedback) | `10s` | `2` | `5s` |
+| Production (calm, few alerts) | `60s` | `5` | `30s` |
+| Resource-constrained / slow start | `30s` | `3` | `60s` |
+
+---
+
+## Security
+
+- **Always** use `SSH_PUBLIC_KEY` in production; keep password login for testing.
+- `PermitRootLogin no` and `PermitEmptyPasswords no` are on by default.
+- The chroot root is root-owned and not writable — set automatically, do not
+  change it by hand.
+- Keep the `sftp-hostkeys` volume persistent so host key fingerprints stay
+  stable.
+- The container serves SFTP only: no shell and no channel forwarding.
+
+See [SECURITY.md](SECURITY.md) for the full policy.
+
+---
+
+## Troubleshooting
+
+Logs:
+
+```bash
+docker compose logs -f sftp                                   # stdout
+docker compose exec sftp tail -f /var/log/sftp/sshd-$(date +%Y%m%d).log
+```
+
+Test a connection with verbose logging:
+
+```bash
+sftp -vvv -P 2222 alice@localhost
+```
+
+If sshd rejects the login due to the chroot
+(`bad ownership or modes for chroot directory`), check that the chroot root is
+root-owned:
+
+```bash
+docker compose exec sftp ls -ld /sftp/alice
+```
+
+---
+
+## Publishing (maintainers)
+
+A GitHub Actions workflow (`.github/workflows/release.yml`) builds a
+**multi-arch** image (`linux/amd64`, `linux/arm64`) and pushes it to **GHCR**
+when a version tag is pushed:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+### Also publish to Docker Hub
+
+Two things are needed:
+
+1. **A Docker Hub access token**: Docker Hub → Account Settings → Security →
+   *New Access Token* (read/write). Do **not** use your account password.
+2. **Repository secrets** in GitHub → Settings → Secrets and variables →
+   Actions:
+   - `DOCKERHUB_USERNAME` = `optimode`
+   - `DOCKERHUB_TOKEN` = the token from step 1
+
+3. **Uncomment the two Docker Hub blocks** in `.github/workflows/release.yml`:
+   the `Log in to Docker Hub` step and the `optimode/sftp` line under
+   `images:`.
+
+That's it — the same tags are then pushed to both registries. The `optimode`
+Docker Hub namespace (user or organization) must exist and the token must have
+push rights to the `sftp` repository.
+
+> For GHCR, make the package **public** after the first push
+> (Package settings → Change visibility) if you want anonymous pulls.
+
+---
+
+## Files
+
+| File | Description |
+| --- | --- |
+| `Dockerfile` | Image definition (Alpine + OpenSSH + rsyslog + tini) |
+| `entrypoint.sh` | User/chroot/`sshd_config` generation + logging startup |
+| `rsyslog.conf` | Timestamped logging (daily file + stdout) |
+| `rotate-logs.sh` | Daily log gzip compression + retention cleanup |
+| `docker-compose.yml` | Production compose (published image, multiuser) |
+| `docker-compose.dev.yml` | Development compose (local build, single user) |
+| `.env.example` | Production environment template |
+| `.env.dev.example` | Development environment template |
+| `etc-sftp/users.conf.example` | Multiuser configuration template |
+| `.github/workflows/release.yml` | CI: tag → multi-arch build & push (GHCR) |
+| `CHANGELOG.md` | Release history |
+| `SECURITY.md` | Security policy |
+
+---
+
+## License
+
+[MIT](LICENSE) © Optimode
