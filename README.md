@@ -404,6 +404,55 @@ rights to the `sftp` repository.
 
 ---
 
+## Maintenance
+
+The image is kept fresh by automation; the policy is:
+
+| Change | Release |
+| --- | --- |
+| Base image / package security patch (same Alpine branch) | **PATCH** (`1.0.1`) |
+| New feature / option | **MINOR** (`1.1.0`) |
+| Breaking change (e.g. Alpine major with changed behaviour) | **MINOR/MAJOR** |
+
+### Automation
+
+- **Dependabot** (`.github/dependabot.yml`) — weekly PRs for a newer `FROM alpine:<tag>`
+  in the Dockerfile and for newer GitHub Actions versions.
+- **CI** (`.github/workflows/ci.yml`) — on every push to `main` and on every PR it
+  builds the image, runs a smoke test (sshd listens) and a **Trivy** vulnerability
+  scan (`CRITICAL,HIGH`, `exit-code: 1`). Good candidate for a required status
+  check in branch protection.
+- **Scheduled rebuild** (`.github/workflows/rebuild.yml`) — on the 1st of every
+  month it does a **no-cache** multi-arch build, pushes it to the `:edge` tag, and
+  opens an issue if `:edge` differs from `:latest` (i.e. Alpine shipped updates),
+  so a patch release can be cut.
+- **Vulnerability alerts** are enabled on the repository (Dependabot alerts and
+  automated security updates).
+
+> Why `--no-cache` matters: the `RUN apk add` layer is cached, so a normal
+> rebuild does **not** pick up new package revisions within the same Alpine tag.
+> Only a no-cache build (or a base-tag change) refreshes them.
+
+### Checking for updates manually
+
+```bash
+# newest Alpine branch available
+docker run --rm alpine:latest cat /etc/alpine-release
+
+# OpenSSH in the pinned branch vs the newest branch
+docker run --rm alpine:3.20 sh -c 'apk add --no-cache --simulate openssh-server 2>&1 | grep Installing'
+docker run --rm alpine:latest sh -c 'apk add --no-cache --simulate openssh-server 2>&1 | grep Installing'
+
+# what our published image currently ships
+docker run --rm --entrypoint sh optimode/sftp:latest -c 'cat /etc/alpine-release; apk info -v | grep openssh-server'
+```
+
+Useful watches: [Alpine releases](https://alpinelinux.org/releases/),
+[Alpine security advisories](https://security.alpinelinux.org/),
+[OpenSSH release notes](https://www.openssh.com/releasenotes.html).
+
+---
+
 ## Files
 
 | File | Description |
@@ -417,7 +466,10 @@ rights to the `sftp` repository.
 | `.env.example` | Production environment template |
 | `.env.dev.example` | Development environment template |
 | `etc-sftp/users.conf.example` | Multiuser configuration template |
-| `.github/workflows/release.yml` | CI: tag → multi-arch build & push (GHCR) |
+| `.github/workflows/release.yml` | CI: tag → multi-arch build & push (GHCR + Docker Hub) |
+| `.github/workflows/ci.yml` | CI: build + smoke test + Trivy scan (push/PR) |
+| `.github/workflows/rebuild.yml` | Monthly no-cache rebuild → `:edge` + issue on change |
+| `.github/dependabot.yml` | Weekly dependency updates (base image + Actions) |
 | `CHANGELOG.md` | Release history |
 | `SECURITY.md` | Security policy |
 

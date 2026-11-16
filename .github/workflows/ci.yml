@@ -1,0 +1,66 @@
+name: ci
+
+# Builds the image, runs a smoke test and a vulnerability scan.
+# Runs on every push to main and on every pull request.
+# This is the workflow to use as a required status check for branch protection.
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-scan:
+    name: build, smoke test & scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build image (local, no push)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          tags: optimode/sftp:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            SFTP_VERSION=ci
+            GIT_REVISION=${{ github.sha }}
+
+      - name: Smoke test (sshd starts and listens)
+        run: |
+          set -e
+          docker run -d --name ci-sftp \
+            -e SFTP_USER=ci -e SFTP_UID=2000 -e SFTP_GID=2000 \
+            optimode/sftp:ci
+          ok=0
+          for i in $(seq 1 30); do
+            if docker exec ci-sftp sh -c 'netstat -ltn | grep -q ":22"'; then ok=1; break; fi
+            sleep 1
+          done
+          if [ "$ok" != "1" ]; then
+            echo "::error::sshd did not start"
+            docker logs ci-sftp || true
+            exit 1
+          fi
+          echo "sshd is listening"
+          docker rm -f ci-sftp
+
+      - name: Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: optimode/sftp:ci
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          vuln-type: os,library
+          exit-code: "1"

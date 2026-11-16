@@ -1,0 +1,88 @@
+name: rebuild
+
+# Monthly (and manual) no-cache rebuild.
+# A no-cache build picks up Alpine security/patch updates that live inside the
+# pinned base image tag (the Dockerfile would otherwise reuse a cached layer).
+# The result is pushed to the `:edge` tag on both registries; if it differs from
+# :latest, an issue is opened so a patch release can be cut.
+on:
+  schedule:
+    - cron: "0 3 1 * *"   # 03:00 UTC on the 1st of every month
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+  issues: write
+
+jobs:
+  rebuild:
+    name: monthly rebuild -> :edge
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build & push :edge (no cache)
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          no-cache: true
+          tags: |
+            ghcr.io/${{ github.repository }}:edge
+            optimode/sftp:edge
+          build-args: |
+            SFTP_VERSION=edge
+            GIT_REVISION=${{ github.sha }}
+
+      - name: Compare :edge with :latest
+        id: cmp
+        run: |
+          new='${{ steps.build.outputs.digest }}'
+          old=$(docker buildx imagetools inspect ghcr.io/${{ github.repository }}:latest \
+                 --format '{{json .Manifest.Digest}}' 2>/dev/null | tr -d '"' || true)
+          echo "edge=$new"
+          echo "latest=$old"
+          if [ -n "$old" ] && [ "$new" != "$old" ]; then
+            echo "changed=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=0" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open an issue when the base/packages changed
+        if: steps.cmp.outputs.changed == '1'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Scheduled rebuild produced a new image (:edge != :latest)"
+          open=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq 'length')
+          if [ "$open" = "0" ]; then
+            body=$(printf 'The monthly no-cache rebuild produced a different image than :latest.\n\nThis usually means the base image and/or Alpine packages were updated. Review the :edge tag and consider cutting a patch release.\n\nRun: %s\n' "$RUN_URL")
+            gh issue create --title "$title" --body "$body"
+          else
+            echo "An open issue already exists; skipping."
+          fi

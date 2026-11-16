@@ -15,6 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `security_opt: [apparmor=unconfined]`, documented under "Platform notes" in
   the README.
 
+### Internal improvements
+
+- Added maintenance automation: **Dependabot** (weekly PRs for the base image
+  and GitHub Actions), a **CI** workflow (build + smoke test + **Trivy**
+  vulnerability scan on push/PR) and a **monthly no-cache rebuild** workflow
+  that publishes `:edge` and opens an issue when the base image or packages
+  change. Repository vulnerability alerts are enabled.
+
 ## [1.0.0-rc1] - 2026-11-16
 
 First release candidate. This is a **staging/testing** artifact and is **not
