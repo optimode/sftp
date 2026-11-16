@@ -20,6 +20,13 @@ services:
     container_name: sftp
     restart: unless-stopped
 
+    # Debian 13 (Trixie) ships a stricter AppArmor profile that denies UNIX
+    # socket creation inside the container, which breaks rsyslog's /dev/log
+    # socket. Unconfining AppArmor for this container fixes it.
+    # See README -> "Platform notes".
+    security_opt:
+      - apparmor=unconfined
+
     # The container-internal port (SFTP_PORT) and the host port are independent.
     ports:
       - "${SFTP_HOST_PORT:-2222}:${SFTP_PORT:-22}"

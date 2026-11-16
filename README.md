@@ -280,6 +280,58 @@ See [SECURITY.md](SECURITY.md) for the full policy.
 
 ---
 
+## Platform notes
+
+### Debian 13 (Trixie): "UNIX socket creation denied" by AppArmor
+
+After upgrading the **host** to Debian 13 (Trixie), AppArmor ships a stricter
+profile that **denies UNIX socket creation inside containers**. The container's
+logging stack needs to create the `/dev/log` socket (rsyslog listens on it and
+sshd writes to it), so with the default profile the socket cannot be created and
+logging falls back to stderr.
+
+**Symptom** — in `docker logs` you see something like:
+
+```
+rsyslogd: omfile: creating ... failed
+# or, from the entrypoint:
+[sftp-init] WARNING: rsyslog failed to start -- logs will go to stderr (docker logs) only
+```
+
+**Fix** — unconfine AppArmor for this container. It is already set in both
+provided compose files:
+
+```yaml
+services:
+  sftp:
+    # ...
+    security_opt:
+      - apparmor=unconfined   # Needed after the Trixie upgrade - UNIX socket creation denied
+```
+
+For `docker run`, pass the equivalent flag:
+
+```bash
+docker run --security-opt apparmor=unconfined ...
+```
+
+**Security note.** `apparmor=unconfined` disables the AppArmor confinement of
+this container. The container is already minimal and hardened (no shell, no
+forwarding, per-user chroot, non-root host processes not required), so the
+practical impact is limited — but it *is* a reduction in defence-in-depth. On
+hosts that do **not** exhibit the problem (older Debian/Ubuntu, most other
+distros) you can remove the `security_opt` block. If you must keep AppArmor
+enabled on Trixie, load a custom profile that allows `unix` socket creation
+instead of unconfining the container:
+
+```bash
+# example: a local profile named "optimode-sftp" that allows unix sockets
+sudo apparmor_parser -r -W /etc/apparmor.d/optimode-sftp
+# then in compose: security_opt: [ "apparmor=optimode-sftp" ]
+```
+
+---
+
 ## Troubleshooting
 
 Logs:

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The container could not create the rsyslog `/dev/log` UNIX socket on Debian 13
+  (Trixie), where a stricter AppArmor profile denies UNIX socket creation inside
+  containers; logging then fell back to stderr. Both compose files now set
+  `security_opt: [apparmor=unconfined]`, documented under "Platform notes" in
+  the README.
+
 ## [1.0.0-rc1] - 2026-11-16
 
 First release candidate. This is a **staging/testing** artifact and is **not
