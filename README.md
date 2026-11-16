@@ -440,7 +440,7 @@ The image is kept fresh by automation; the policy is:
 docker run --rm alpine:latest cat /etc/alpine-release
 
 # OpenSSH in the pinned branch vs the newest branch
-docker run --rm alpine:3.20 sh -c 'apk add --no-cache --simulate openssh-server 2>&1 | grep Installing'
+docker run --rm alpine:3.24 sh -c 'apk add --no-cache --simulate openssh-server 2>&1 | grep Installing'
 docker run --rm alpine:latest sh -c 'apk add --no-cache --simulate openssh-server 2>&1 | grep Installing'
 
 # what our published image currently ships
