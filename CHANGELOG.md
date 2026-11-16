@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Base image bumped from `alpine:3.20` to `alpine:3.24`. This brings
+  **OpenSSH `10.3`** (up from `9.7`) and a newer rsyslog; the container image is
+  otherwise unchanged (no configuration or behaviour changes).
+
 ### Fixed
 
 - The container could not create the rsyslog `/dev/log` UNIX socket on Debian 13
