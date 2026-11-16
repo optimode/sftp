@@ -7,33 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
+## [1.0.0] - 2026-11-16
 
-- Base image bumped from `alpine:3.20` to `alpine:3.24`. This brings
-  **OpenSSH `10.3`** (up from `9.7`) and a newer rsyslog; the container image is
-  otherwise unchanged (no configuration or behaviour changes).
-
-### Fixed
-
-- The container could not create the rsyslog `/dev/log` UNIX socket on Debian 13
-  (Trixie), where a stricter AppArmor profile denies UNIX socket creation inside
-  containers; logging then fell back to stderr. Both compose files now set
-  `security_opt: [apparmor=unconfined]`, documented under "Platform notes" in
-  the README.
-
-### Internal improvements
-
-- Added maintenance automation: **Dependabot** (weekly PRs for the base image
-  and GitHub Actions), a **CI** workflow (build + smoke test + **Trivy**
-  vulnerability scan on push/PR) and a **monthly no-cache rebuild** workflow
-  that publishes `:edge` and opens an issue when the base image or packages
-  change. Repository vulnerability alerts are enabled.
-
-## [1.0.0-rc1] - 2026-11-16
-
-First release candidate. This is a **staging/testing** artifact and is **not
-production-ready yet**; a corresponding stable `1.0.0` release will follow once
-the release candidate has been validated.
+First stable release. Validated on staging as `v1.0.0-rc1`; the stable release
+additionally includes the Alpine 3.24 base bump, the AppArmor compose fix and
+the maintenance automation, which landed after the candidate.
 
 ### Added
 
@@ -66,6 +44,14 @@ the release candidate has been validated.
   (`ghcr.io/optimode/sftp`) and Docker Hub (`optimode/sftp`), built by CI on
   version tags. Pre-release tags do not move the `latest`, `1` or `1.0` tags.
 
+### Changed
+
+- Base image bumped from `alpine:3.20` to **`alpine:3.24`**, bringing
+  **OpenSSH `10.3`** (up from `9.7`) and a newer rsyslog. No configuration or
+  behaviour changes; the change is transparent to SFTP clients.
+- The Docker Hub `security_opt: [apparmor=unconfined]` entry is now present in
+  both compose files by default (see Fixed).
+
 ### Fixed
 
 - Public-key logins were rejected with "account is locked" because `adduser`
@@ -79,11 +65,33 @@ the release candidate has been validated.
   switch to a `read`-based parser.
 - `rsyslog`'s `omstdout` module is now loaded explicitly so stdout mirroring
   works.
+- The container could not create the rsyslog `/dev/log` UNIX socket on Debian 13
+  (Trixie), where a stricter AppArmor profile denies UNIX socket creation inside
+  containers; logging then fell back to stderr. Both compose files now set
+  `security_opt: [apparmor=unconfined]`, documented under "Platform notes".
 
 ### Security
 
 - No shell, no port/agent forwarding, no tunnelling, no root login, empty
   passwords disabled, and strict file-ownership checks on chroots.
+- The Alpine 3.24 base removes fixable HIGH-severity findings (`musl`) that were
+  present in the 3.20 base.
 
-[Unreleased]: https://github.com/optimode/sftp/compare/1.0.0-rc1...HEAD
+### Internal improvements
+
+- Added maintenance automation: **Dependabot** (weekly PRs for the base image
+  and GitHub Actions), a **CI** workflow (build + smoke test + **Trivy**
+  vulnerability scan on push/PR) and a **monthly no-cache rebuild** workflow
+  that publishes `:edge` and opens an issue when the base image or packages
+  change. Repository vulnerability alerts are enabled.
+
+## [1.0.0-rc1] - 2026-11-16
+
+First release candidate for `1.0.0` (staging/testing artifact, **not**
+production-ready at the time). Superseded by `1.0.0`, which adds the Alpine 3.24
+base bump, the AppArmor compose fix and the maintenance automation; see the
+`1.0.0` section for the complete change set.
+
+[Unreleased]: https://github.com/optimode/sftp/compare/1.0.0...HEAD
+[1.0.0]: https://github.com/optimode/sftp/releases/tag/v1.0.0
 [1.0.0-rc1]: https://github.com/optimode/sftp/releases/tag/v1.0.0-rc1
