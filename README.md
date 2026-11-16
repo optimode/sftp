@@ -308,32 +308,44 @@ docker compose exec sftp ls -ld /sftp/alice
 ## Publishing (maintainers)
 
 A GitHub Actions workflow (`.github/workflows/release.yml`) builds a
-**multi-arch** image (`linux/amd64`, `linux/arm64`) and pushes it to **GHCR**
-when a version tag is pushed:
+**multi-arch** image (`linux/amd64`, `linux/arm64`) and pushes it to both
+registries when a version tag is pushed:
+
+- **GHCR**: `ghcr.io/optimode/sftp`
+- **Docker Hub**: `optimode/sftp`
+
+### Tag behaviour
+
+| Tag pushed | Resulting image tags |
+| --- | --- |
+| `v1.0.0` (stable) | `1.0.0`, `1.0`, `1`, `latest` |
+| `v1.0.0-rc1` (pre-release) | `1.0.0-rc1` only |
+
+Pre-release (RC) tags never move `latest`, `1` or `1.0`.
+
+### Cutting a release
 
 ```bash
-git tag v1.0.0
+# release candidate (staging/testing)
+git tag -a v1.0.0-rc1 -m "Release Candidate 1.0.0-rc1"
+git push origin v1.0.0-rc1
+
+# stable release (after the RC has been validated)
+git tag -a v1.0.0 -m "Release v1.0.0"
 git push origin v1.0.0
 ```
 
-### Also publish to Docker Hub
+### Required secrets
 
-Two things are needed:
+The workflow needs two repository secrets (Settings → Secrets and variables →
+Actions), both already used by the Docker Hub login step:
 
-1. **A Docker Hub access token**: Docker Hub → Account Settings → Security →
-   *New Access Token* (read/write). Do **not** use your account password.
-2. **Repository secrets** in GitHub → Settings → Secrets and variables →
-   Actions:
-   - `DOCKERHUB_USERNAME` = `optimode`
-   - `DOCKERHUB_TOKEN` = the token from step 1
+- `DOCKERHUB_USERNAME` = `optimode`
+- `DOCKERHUB_TOKEN` = a Docker Hub **access token** (Account Settings →
+  Security → *New Access Token*, read/write) — never the account password.
 
-3. **Uncomment the two Docker Hub blocks** in `.github/workflows/release.yml`:
-   the `Log in to Docker Hub` step and the `optimode/sftp` line under
-   `images:`.
-
-That's it — the same tags are then pushed to both registries. The `optimode`
-Docker Hub namespace (user or organization) must exist and the token must have
-push rights to the `sftp` repository.
+The `optimode` Docker Hub namespace must exist and the token must have push
+rights to the `sftp` repository.
 
 > For GHCR, make the package **public** after the first push
 > (Package settings → Change visibility) if you want anonymous pulls.

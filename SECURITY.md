@@ -2,20 +2,18 @@
 
 ## Reporting a Vulnerability
 
-Please report security issues **privately** and do not open a public issue for
-them.
+Please report security issues through the project's GitHub Issues page:
 
-- Preferred: use GitHub's [private vulnerability reporting](https://github.com/optimode/sftp/security/advisories/new)
-  ("Report a vulnerability" on the Security tab).
-- Alternatively, email the maintainers at <security@optimode.example> and
-  include:
-  - a description of the issue and its impact,
-  - steps to reproduce (proof of concept if possible),
-  - the affected version/tag and your environment.
+- https://github.com/optimode/sftp/issues
+
+When opening an issue, please include:
+
+- a description of the issue and its impact,
+- steps to reproduce (a proof of concept if possible),
+- the affected version/tag and your environment.
 
 We aim to acknowledge reports within a few business days and to provide a
-remediation timeline after triage. Please give us reasonable time to release a
-fix before any public disclosure.
+remediation timeline after triage.
 
 ## Supported Versions
 

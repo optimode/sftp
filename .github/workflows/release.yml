@@ -1,6 +1,9 @@
 name: release
 
-# Build and push a multi-arch image on version tags (e.g. v1.0.0, v1.2.3-rc1).
+# Build and push a multi-arch image on version tags.
+#  - stable tags (v1.2.3)      -> also tag 1.2, 1, latest
+#  - pre-release tags (v1.2.3-rc1) -> version tag only (never latest/1.2/1)
+# Publishes to GHCR and Docker Hub.
 on:
   push:
     tags:
@@ -23,7 +26,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # --------------------------- GHCR (default) ---------------------------
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -31,14 +33,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # ------------------------- Docker Hub (optional) ----------------------
-      # Uncomment to also publish to Docker Hub. Requires two repository
-      # secrets: DOCKERHUB_USERNAME and DOCKERHUB_TOKEN (see README).
-      # - name: Log in to Docker Hub
-      #   uses: docker/login-action@v3
-      #   with:
-      #     username: ${{ secrets.DOCKERHUB_USERNAME }}
-      #     password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Image metadata
         id: meta
@@ -46,11 +45,11 @@ jobs:
         with:
           images: |
             ghcr.io/${{ github.repository }}
-            # optimode/sftp        # <- uncomment for Docker Hub
+            optimode/sftp
           tags: |
             type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ !contains(github.ref_name, '-') }}
+            type=semver,pattern={{major}},enable=${{ !contains(github.ref_name, '-') }}
             type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
 
       - name: Build and push
